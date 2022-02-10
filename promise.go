@@ -16,10 +16,16 @@ type FulfillHandler func(value interface{}) (result interface{}, err error)
 type RejectHandler func(reason error)
 type FinallyHandler func()
 
-type Promise struct {
+type Promise interface {
+	Then(handler FulfillHandler) Promise
+	Catch(handler RejectHandler) Promise
+	Finally(handler FinallyHandler) Promise
+}
+
+type Implementation struct {
 	wg          sync.WaitGroup
 	state       State
-	observers   []*Promise
+	observers   []*Implementation
 	onFulfilled FulfillHandler
 	onRejected  RejectHandler
 	onFinalized FinallyHandler
@@ -28,8 +34,8 @@ type Promise struct {
 	err   error
 }
 
-func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
-	p := &Promise{
+func NewPromise(callback func(resolve Resolver, reject Rejector)) *Implementation {
+	p := &Implementation{
 		state: StatePending,
 	}
 
@@ -46,34 +52,38 @@ func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
 	return p
 }
 
-func Resolve(value interface{}) *Promise {
-	return &Promise{
+func Resolve(value interface{}) *Implementation {
+	return &Implementation{
 		state: StateFulfilled,
 		value: value,
 	}
 }
 
-func Reject(reason error) *Promise {
-	return &Promise{
+func Reject(reason error) *Implementation {
+	return &Implementation{
 		state: StateRejected,
 		err:   reason,
 	}
 }
 
-func (p *Promise) Then(handler FulfillHandler) *Promise {
+func (p *Implementation) Then(handler FulfillHandler) Promise {
 	return p.registerHandlers(handler, nil, nil)
 }
 
-func (p *Promise) Catch(handler RejectHandler) *Promise {
+func (p *Implementation) Catch(handler RejectHandler) Promise {
 	return p.registerHandlers(nil, handler, nil)
 }
 
-func (p *Promise) Finally(handler FinallyHandler) *Promise {
+func (p *Implementation) Finally(handler FinallyHandler) Promise {
 	return p.registerHandlers(nil, nil, handler)
 }
 
-func (p *Promise) registerHandlers(fulfillHandler FulfillHandler, rejectHandler RejectHandler, finallyHandler FinallyHandler) *Promise {
-	newPromise := &Promise{
+func (p *Implementation) registerHandlers(
+	fulfillHandler FulfillHandler,
+	rejectHandler RejectHandler,
+	finallyHandler FinallyHandler,
+) *Implementation {
+	newPromise := &Implementation{
 		state:       StatePending,
 		onFulfilled: fulfillHandler,
 		onRejected:  rejectHandler,
@@ -89,11 +99,11 @@ func (p *Promise) registerHandlers(fulfillHandler FulfillHandler, rejectHandler 
 	return newPromise
 }
 
-func (p *Promise) addObserver(promise *Promise) {
+func (p *Implementation) addObserver(promise *Implementation) {
 	p.observers = append(p.observers, promise)
 }
 
-func (p *Promise) receiveNotification(promise *Promise) {
+func (p *Implementation) receiveNotification(promise *Implementation) {
 	promise.wg.Wait()
 
 	switch promise.state {
@@ -113,7 +123,7 @@ func (p *Promise) receiveNotification(promise *Promise) {
 				if result, err := p.onFulfilled(promise.value); nil == err {
 					p.resolve(result)
 
-					if promiseResult, ok := result.(*Promise); ok {
+					if promiseResult, ok := result.(*Implementation); ok {
 						p.notifyObservers(promiseResult)
 
 						return
@@ -160,7 +170,7 @@ func (p *Promise) receiveNotification(promise *Promise) {
 	}
 }
 
-func (p *Promise) notifyObservers(promise *Promise) {
+func (p *Implementation) notifyObservers(promise *Implementation) {
 	for _, observer := range p.observers {
 		observer.receiveNotification(promise)
 	}
@@ -168,7 +178,7 @@ func (p *Promise) notifyObservers(promise *Promise) {
 	p.observers = nil
 }
 
-func (p *Promise) resolve(value interface{}) {
+func (p *Implementation) resolve(value interface{}) {
 	if StatePending != p.state {
 		return
 	}
@@ -177,7 +187,7 @@ func (p *Promise) resolve(value interface{}) {
 	p.value = value
 }
 
-func (p *Promise) reject(reason error) {
+func (p *Implementation) reject(reason error) {
 	if StatePending != p.state {
 		return
 	}
