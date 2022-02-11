@@ -2,6 +2,7 @@
 Promise library for Go.
 
 [![GitHub license](https://img.shields.io/github/license/donatorsky/go-promise)](https://github.com/donatorsky/go-promise/blob/main/LICENSE)
+[![Build](https://github.com/donatorsky/go-promise/workflows/Tests/badge.svg?branch=main)](https://github.com/donatorsky/go-promise/actions?query=branch%3Amain)
 
 ## Installation
 
