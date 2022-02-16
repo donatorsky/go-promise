@@ -32,6 +32,14 @@ func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
 	go func() {
 		callback(p.resolve, p.reject)
 
+		if StateSettling == p.state {
+			p.state = StatePending
+
+			p.wg.Done()
+
+			return
+		}
+
 		p.wg.Done()
 
 		p.notifyObservers(p)
