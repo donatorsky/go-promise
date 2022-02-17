@@ -29,7 +29,7 @@ func (r *callsRegistry) Register(place string) {
 	defer r.mutex.Unlock()
 
 	if 0 == r.expectedCalls {
-		panic("trying to register unexpected call")
+		panic("trying to register unexpected call: " + place)
 	}
 
 	r.registry = append(r.registry, place)
@@ -52,8 +52,9 @@ func (r *callsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry str
 			require.FailNowf(
 				t,
 				"Calls registry assertion timeout",
-				"There are still %d expected call(s) left.",
+				"There are still %d expected call(s) left. Calls registered: %v.",
 				r.expectedCalls,
+				r.registry,
 			)
 			return
 

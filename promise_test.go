@@ -62,7 +62,7 @@ func TestPromise_Resolve(t *testing.T) {
 		{state: StateRejected},
 	} {
 		t.Run(fmt.Sprintf("Cannot manually Resolve promise in state: %s", tt.state), func(t *testing.T) {
-			promise := &Promise{
+			promise := Promise{
 				state: tt.state,
 			}
 
@@ -71,26 +71,22 @@ func TestPromise_Resolve(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Successfully manually Resolve promise in state: %s", StatePending), func(t *testing.T) {
+		callsStack := NewCallsRegistry(1)
+
 		var resolutionValue = fakerInstance.Int()
 
-		onFulfilledCallsCounter := 0
-		observerPromise := Promise{
-			onFulfilled: func(value interface{}) (interface{}, error) {
-				if assert.Equal(t, resolutionValue, value) {
-					onFulfilledCallsCounter++
-				}
-
-				return nil, nil
+		promise := Promise{
+			state: StatePending,
+			handlers: []func(){
+				func() {
+					callsStack.Register("Fulfilled")
+				},
 			},
 		}
 
-		promise := Pending()
-		promise.observers = append(promise.observers, &observerPromise)
-
 		require.Nil(t, promise.Resolve(resolutionValue))
-		observerPromise.wg.Wait()
-		require.Equal(t, 1, onFulfilledCallsCounter)
-		require.True(t, assertPromise(t, promise, StateFulfilled, resolutionValue, nil))
+		callsStack.AssertCompletedBefore(t, "Fulfilled", time.Millisecond*5)
+		require.True(t, assertPromise(t, &promise, StateFulfilled, resolutionValue, nil))
 	})
 }
 
@@ -106,7 +102,7 @@ func TestPromise_Reject(t *testing.T) {
 		{state: StateRejected},
 	} {
 		t.Run(fmt.Sprintf("Cannot manually Reject promise in state: %s", tt.state), func(t *testing.T) {
-			promise := &Promise{
+			promise := Promise{
 				state: tt.state,
 			}
 
@@ -118,21 +114,21 @@ func TestPromise_Reject(t *testing.T) {
 		var rejectionReason = errors.New("some rejection error")
 
 		onRejectedCallsCounter := 0
-		observerPromise := Promise{
-			onRejected: func(reason error) {
-				if assert.Same(t, rejectionReason, reason) {
+
+		promise := Promise{
+			state: StatePending,
+			handlers: []func(){
+				func() {
 					onRejectedCallsCounter++
-				}
+				},
 			},
 		}
 
-		promise := Pending()
-		promise.observers = append(promise.observers, &observerPromise)
-
 		require.Nil(t, promise.Reject(rejectionReason))
-		observerPromise.wg.Wait()
+
+		time.Sleep(time.Millisecond * 1) //TODO
 		require.Equal(t, 1, onRejectedCallsCounter)
-		require.True(t, assertPromise(t, promise, StateRejected, nil, rejectionReason))
+		require.True(t, assertPromise(t, &promise, StateRejected, nil, rejectionReason))
 	})
 }
 
@@ -145,12 +141,10 @@ func TestPromise_Then(t *testing.T) {
 		{state: StatePending},
 		{state: StateSettling},
 	} {
-		t.Run(fmt.Sprintf("Returns new Promise and registers as observer for Promise in state: %s", tt.state), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
 			promise := Promise{
 				state: tt.state,
 			}
-
-			require.Empty(t, promise.observers)
 
 			thenPromiseHasBeenCalledTimes := 0
 			thenPromise := promise.Then(func(value interface{}) (interface{}, error) {
@@ -159,47 +153,37 @@ func TestPromise_Then(t *testing.T) {
 				return nil, nil
 			})
 
-			require.NotSame(t, promise, thenPromise)
-			require.Len(t, promise.observers, 1)
-			require.Same(t, thenPromise, promise.observers[0])
-
-			promise.wg.Wait()
-			thenPromise.(*Promise).wg.Wait()
+			require.NotSame(t, &promise, thenPromise)
+			require.Len(t, promise.handlers, 1)
 			require.Equal(t, 0, thenPromiseHasBeenCalledTimes)
 		})
 	}
 
-	t.Run(fmt.Sprintf("Returns new Promise, does not register as observer and executes Then immidiately for Promise in state: %s", StateFulfilled), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Then immidiately for Promise in state: %s", StateFulfilled), func(t *testing.T) {
+		callsStack := NewCallsRegistry(1)
+
 		promise := Promise{
 			state: StateFulfilled,
 			value: fakerInstance.Int(),
 		}
 
-		require.Empty(t, promise.observers)
-
-		thenPromiseHasBeenCalledTimes := 0
 		thenPromise := promise.Then(func(value interface{}) (interface{}, error) {
-			if promise.value == value {
-				thenPromiseHasBeenCalledTimes++
-			}
+			require.Equal(t, promise.value, value)
+
+			callsStack.Register("Then")
 
 			return nil, nil
 		})
 
-		require.NotSame(t, promise, thenPromise)
-		require.Empty(t, promise.observers)
-
-		promise.wg.Wait()
-		thenPromise.(*Promise).wg.Wait()
-		require.Equal(t, 1, thenPromiseHasBeenCalledTimes)
+		require.NotSame(t, &promise, thenPromise)
+		require.Empty(t, promise.handlers)
+		callsStack.AssertCompletedBefore(t, "Then", time.Millisecond*5)
 	})
 
-	t.Run(fmt.Sprintf("Returns new Promise, does not register as observer and skips Then for Promise in state: %s", StateRejected), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and skips Then for Promise in state: %s", StateRejected), func(t *testing.T) {
 		promise := Promise{
 			state: StateRejected,
 		}
-
-		require.Empty(t, promise.observers)
 
 		thenPromiseHasBeenCalledTimes := 0
 		thenPromise := promise.Then(func(value interface{}) (interface{}, error) {
@@ -208,11 +192,8 @@ func TestPromise_Then(t *testing.T) {
 			return nil, nil
 		})
 
-		require.NotSame(t, promise, thenPromise)
-		require.Empty(t, promise.observers)
-
-		promise.wg.Wait()
-		thenPromise.(*Promise).wg.Wait()
+		require.NotSame(t, &promise, thenPromise)
+		require.Empty(t, promise.handlers)
 		require.Equal(t, 0, thenPromiseHasBeenCalledTimes)
 	})
 }
@@ -224,66 +205,54 @@ func TestPromise_Catch(t *testing.T) {
 		{state: StatePending},
 		{state: StateSettling},
 	} {
-		t.Run(fmt.Sprintf("Returns new Promise and registers as observer for Promise in state: %s", tt.state), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
 			promise := Promise{
 				state: tt.state,
 			}
-
-			require.Empty(t, promise.observers)
 
 			catchPromiseHasBeenCalledTimes := 0
 			catchPromise := promise.Catch(func(reason error) {
 				catchPromiseHasBeenCalledTimes++
 			})
 
-			require.NotSame(t, promise, catchPromise)
-			require.Len(t, promise.observers, 1)
-			require.Same(t, catchPromise, promise.observers[0])
+			require.NotSame(t, &promise, catchPromise)
+			require.Len(t, promise.handlers, 1)
 			require.Equal(t, 0, catchPromiseHasBeenCalledTimes)
 		})
 	}
 
-	t.Run(fmt.Sprintf("Returns new Promise, does not register as observer and skips Catch for Promise in state: %s", StateFulfilled), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and skips Catch for Promise in state: %s", StateFulfilled), func(t *testing.T) {
 		promise := Promise{
 			state: StateFulfilled,
 		}
-
-		require.Empty(t, promise.observers)
 
 		catchPromiseHasBeenCalledTimes := 0
 		catchPromise := promise.Catch(func(reason error) {
 			catchPromiseHasBeenCalledTimes++
 		})
 
-		require.NotSame(t, promise, catchPromise)
-		require.Empty(t, promise.observers)
-
-		promise.wg.Wait()
-		catchPromise.(*Promise).wg.Wait()
+		require.NotSame(t, &promise, catchPromise)
+		require.Empty(t, promise.handlers)
 		require.Equal(t, 0, catchPromiseHasBeenCalledTimes)
 	})
 
-	t.Run(fmt.Sprintf("Returns new Promise, does not register as observer and executes Catch immidiately for Promise in state: %s", StateRejected), func(t *testing.T) {
+	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Catch immidiately for Promise in state: %s", StateRejected), func(t *testing.T) {
+		callsStack := NewCallsRegistry(1)
+
 		promise := Promise{
 			state: StateRejected,
 			err:   errors.New("rejection reason"),
 		}
 
-		require.Empty(t, promise.observers)
-
-		catchPromiseHasBeenCalledTimes := 0
 		catchPromise := promise.Catch(func(reason error) {
-			if promise.err == reason {
-				catchPromiseHasBeenCalledTimes++
-			}
+			require.ErrorIs(t, promise.err, reason)
+
+			callsStack.Register("Catch")
 		})
 
-		require.NotSame(t, promise, catchPromise)
-		require.Empty(t, promise.observers)
-
-		promise.wg.Wait()
-		catchPromise.(*Promise).wg.Wait()
-		require.Equal(t, 1, catchPromiseHasBeenCalledTimes)
+		require.NotSame(t, &promise, catchPromise)
+		require.Empty(t, promise.handlers)
+		callsStack.AssertCompletedBefore(t, "Catch", time.Millisecond*5)
 	})
 }
 
@@ -294,21 +263,18 @@ func TestPromise_Finally(t *testing.T) {
 		{state: StatePending},
 		{state: StateSettling},
 	} {
-		t.Run(fmt.Sprintf("Returns new Promise and registers as observer for Promise in state: %s", tt.state), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
 			promise := Promise{
 				state: tt.state,
 			}
-
-			require.Empty(t, promise.observers)
 
 			finallyPromiseHasBeenCalledTimes := 0
 			finallyPromise := promise.Finally(func() {
 				finallyPromiseHasBeenCalledTimes++
 			})
 
-			require.NotSame(t, promise, finallyPromise)
-			require.Len(t, promise.observers, 1)
-			require.Same(t, finallyPromise, promise.observers[0])
+			require.NotSame(t, &promise, finallyPromise)
+			require.Len(t, promise.handlers, 1)
 			require.Equal(t, 0, finallyPromiseHasBeenCalledTimes)
 		})
 	}
@@ -319,21 +285,22 @@ func TestPromise_Finally(t *testing.T) {
 		{state: StateFulfilled},
 		{state: StateRejected},
 	} {
-		t.Run(fmt.Sprintf("Returns new Promise, does not register as observer and executes Finally immidiately for Promise in state: %s", tt.state), func(t *testing.T) {
+		t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Finally immidiately for Promise in state: %s", tt.state), func(t *testing.T) {
+			callsStack := NewCallsRegistry(1)
+
 			promise := Promise{
 				state: tt.state,
 			}
 
-			require.Empty(t, promise.observers)
-
 			finallyPromiseHasBeenCalledTimes := 0
 			finallyPromise := promise.Finally(func() {
-				finallyPromiseHasBeenCalledTimes++
+				callsStack.Register("Finally")
 			})
 
-			require.NotSame(t, promise, finallyPromise)
-			require.Empty(t, promise.observers)
+			require.NotSame(t, &promise, finallyPromise)
+			require.Empty(t, promise.handlers)
 			require.Equal(t, 0, finallyPromiseHasBeenCalledTimes)
+			callsStack.AssertCompletedBefore(t, "Finally", time.Millisecond*5)
 		})
 	}
 }
@@ -351,7 +318,8 @@ func TestNewPromise(t *testing.T) {
 
 		require.Equal(t, 0, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
-		promise.wg.Wait()
+
+		time.Sleep(time.Millisecond * 6)
 		require.Equal(t, 1, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StatePending, nil, nil))
 	})
@@ -369,7 +337,8 @@ func TestNewPromise(t *testing.T) {
 
 		require.Equal(t, 0, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
-		promise.wg.Wait()
+
+		time.Sleep(time.Millisecond * 6)
 		require.Equal(t, 1, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StateFulfilled, resolutionValue, nil))
 	})
@@ -387,7 +356,8 @@ func TestNewPromise(t *testing.T) {
 
 		require.Equal(t, 0, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
-		promise.wg.Wait()
+
+		time.Sleep(time.Millisecond * 6)
 		require.Equal(t, 1, callbackCallsCounter)
 		require.True(t, assertPromise(t, promise, StateRejected, nil, rejectionReason))
 	})
@@ -395,6 +365,216 @@ func TestNewPromise(t *testing.T) {
 
 func TestPromise(t *testing.T) {
 	fakerInstance := faker.New()
+
+	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value", func(t *testing.T) {
+		callsStack := NewCallsRegistry(7)
+
+		var resolvedValue = fakerInstance.IntBetween(2, 999)
+
+		promise := NewPromise(func(resolve Resolver, _ Rejector) {
+			time.Sleep(time.Millisecond * 5)
+
+			callsStack.Register("NewPromise.1")
+
+			resolve(resolvedValue)
+		})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 1)
+
+				callsStack.Register("Then.1")
+
+				return resolvedValue + 0, nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+0, value)
+
+				time.Sleep(time.Millisecond * 150)
+
+				callsStack.Register("Then.1.1")
+
+				return nil, nil
+			})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 2)
+
+				callsStack.Register("Then.2")
+
+				return resolvedValue + 1, nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+1, value)
+
+				time.Sleep(time.Millisecond * 100)
+
+				callsStack.Register("Then.2.1")
+
+				return nil, nil
+			})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 3)
+
+				callsStack.Register("Then.3")
+
+				return resolvedValue + 2, nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+2, value)
+
+				time.Sleep(time.Millisecond * 50)
+
+				callsStack.Register("Then.3.1")
+
+				return nil, nil
+			})
+
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Then.2|Then.3|Then.1.1|Then.2.1|Then.3.1", time.Millisecond*500)
+	})
+
+	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value as Promise", func(t *testing.T) {
+		callsStack := NewCallsRegistry(7)
+
+		var resolvedValue = fakerInstance.IntBetween(2, 999)
+
+		promise := NewPromise(func(resolve Resolver, _ Rejector) {
+			time.Sleep(time.Millisecond * 5)
+
+			callsStack.Register("NewPromise.1")
+
+			resolve(resolvedValue)
+		})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 1)
+
+				callsStack.Register("Then.1")
+
+				return NewPromise(func(resolve Resolver, _ Rejector) {
+					time.Sleep(time.Millisecond * 100)
+
+					resolve(resolvedValue + 0)
+				}), nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+0, value)
+
+				callsStack.Register("Then.1.1")
+
+				return nil, nil
+			})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 2)
+
+				callsStack.Register("Then.2")
+
+				return NewPromise(func(resolve Resolver, _ Rejector) {
+					time.Sleep(time.Millisecond * 75)
+
+					resolve(resolvedValue + 1)
+				}), nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+1, value)
+
+				callsStack.Register("Then.2.1")
+
+				return nil, nil
+			})
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				time.Sleep(time.Millisecond * 3)
+
+				callsStack.Register("Then.3")
+
+				return NewPromise(func(resolve Resolver, _ Rejector) {
+					time.Sleep(time.Millisecond * 50)
+
+					resolve(resolvedValue + 2)
+				}), nil
+			}).
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue+2, value)
+
+				callsStack.Register("Then.3.1")
+
+				return nil, nil
+			})
+
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Then.2|Then.3|Then.3.1|Then.2.1|Then.1.1", time.Millisecond*500)
+	})
+
+	t.Run("Multiple Catch callbacks receive the same rejection error, do not pass it further", func(t *testing.T) {
+		callsStack := NewCallsRegistry(4)
+
+		var rejectionReason = fakerInstance.Lorem().Sentence(6)
+
+		promise := NewPromise(func(_ Resolver, reject Rejector) {
+			time.Sleep(time.Millisecond * 5)
+
+			callsStack.Register("NewPromise.1")
+
+			reject(errors.New(rejectionReason))
+		})
+
+		promise.
+			Catch(func(reason error) {
+				require.EqualError(t, reason, rejectionReason)
+
+				time.Sleep(time.Millisecond * 1)
+
+				callsStack.Register("Catch.1")
+			}).
+			Catch(func(reason error) {
+				callsStack.Register("Catch.1.1")
+			})
+
+		promise.
+			Catch(func(reason error) {
+				require.EqualError(t, reason, rejectionReason)
+
+				time.Sleep(time.Millisecond * 2)
+
+				callsStack.Register("Catch.2")
+			}).
+			Catch(func(reason error) {
+				callsStack.Register("Catch.2.1")
+			})
+
+		promise.
+			Catch(func(reason error) {
+				require.EqualError(t, reason, rejectionReason)
+
+				time.Sleep(time.Millisecond * 3)
+
+				callsStack.Register("Catch.3")
+			}).
+			Catch(func(reason error) {
+				callsStack.Register("Catch.3.1")
+			})
+
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Catch.1|Catch.2|Catch.3", time.Millisecond*100)
+	})
 
 	t.Run("Finally is called after Then", func(t *testing.T) {
 		callsStack := NewCallsRegistry(4)
@@ -427,7 +607,7 @@ func TestPromise(t *testing.T) {
 			callsStack.Register("Finally.1")
 		})
 
-		callsStack.AssertCompletedBefore(t, "NewPromise.1|Finally.1|Then.1|Finally.2", time.Second)
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Finally.2", time.Millisecond*1000)
 	})
 
 	t.Run("Finally is called after Catch", func(t *testing.T) {
@@ -461,7 +641,7 @@ func TestPromise(t *testing.T) {
 			callsStack.Register("Finally.1")
 		})
 
-		callsStack.AssertCompletedBefore(t, "NewPromise.1|Finally.1|Catch.1|Finally.2", time.Second)
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Catch.1|Finally.1|Finally.2", time.Millisecond*100)
 	})
 
 	t.Run("Then can return another Promise", func(t *testing.T) {
@@ -507,7 +687,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Then.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Then.2|Finally.3", time.Millisecond*100)
 		})
 
 		t.Run("Already rejected Promise", func(t *testing.T) {
@@ -550,7 +730,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Catch.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Catch.2|Finally.3", time.Millisecond*100)
 		})
 
 		t.Run("Settling Promise", func(t *testing.T) {
@@ -601,7 +781,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|NewPromise.1.1|Then.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|NewPromise.1.1|Then.2|Finally.3", time.Millisecond*100)
 		})
 
 		t.Run("Resolve pending Promise", func(t *testing.T) {
@@ -659,7 +839,63 @@ func TestPromise(t *testing.T) {
 			// Wait for next Then and Finally to be called
 			time.Sleep(time.Millisecond * 5)
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Then.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Then.2|Finally.3", time.Millisecond*100)
+		})
+
+		t.Run("Reject pending Promise", func(t *testing.T) {
+			callsStack := NewCallsRegistry(5)
+
+			var resolvedValue = fakerInstance.Int()
+
+			promise := NewPromise(func(resolve Resolver, _ Rejector) {
+				time.Sleep(time.Millisecond * 5)
+
+				callsStack.Register("NewPromise.1")
+
+				resolve(resolvedValue)
+			})
+
+			promise.Catch(func(_ error) {
+				callsStack.Register("Catch.1")
+			})
+
+			var resolvedThenValue = fakerInstance.Lorem().Sentence(6)
+			pendingPromise := Pending()
+
+			promise.
+				Then(func(value interface{}) (interface{}, error) {
+					require.Equal(t, resolvedValue, value)
+
+					callsStack.Register("Then.1")
+
+					return pendingPromise, nil
+				}).
+				Catch(func(reason error) {
+					require.EqualError(t, reason, resolvedThenValue)
+
+					callsStack.Register("Catch.2")
+				}).
+				Finally(func() {
+					callsStack.Register("Finally.3")
+				})
+
+			promise.Finally(func() {
+				callsStack.Register("Finally.1")
+			})
+
+			// Wait for NewPromise to be resolved and Then to be called
+			time.Sleep(time.Millisecond * 10)
+
+			callsStack.AssertCurrentCallsStackIs(t, "NewPromise.1|Then.1|Finally.1")
+			callsStack.AssertThereAreNCallsLeft(t, 2)
+
+			// Manually resolve pending promise
+			require.Nil(t, pendingPromise.Reject(errors.New(resolvedThenValue)))
+
+			// Wait for next Then and Finally to be called
+			time.Sleep(time.Millisecond * 5)
+
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.1|Finally.1|Catch.2|Finally.3", time.Millisecond*100)
 		})
 	})
 
@@ -692,7 +928,7 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Finally.3")
 				})
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Then.2|Finally.3", time.Millisecond*100)
 		})
 
 		t.Run("Then receives nil value when Catch was called", func(t *testing.T) {
@@ -725,8 +961,53 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Finally.3")
 				})
 
-			callsStack.AssertCompletedBefore(t, "NewPromise.1|Catch.1|Then.2|Finally.3", time.Second)
+			callsStack.AssertCompletedBefore(t, "NewPromise.1|Catch.1|Then.2|Finally.3", time.Millisecond*100)
 		})
+	})
+
+	t.Run("Then returns error and Catch receives it", func(t *testing.T) {
+		callsStack := NewCallsRegistry(6)
+
+		var resolvedValue = fakerInstance.Int()
+
+		promise := NewPromise(func(resolve Resolver, _ Rejector) {
+			time.Sleep(time.Millisecond * 5)
+
+			callsStack.Register("NewPromise.1")
+
+			resolve(resolvedValue)
+		})
+
+		promise.Catch(func(_ error) {
+			callsStack.Register("Catch.1")
+		}).Finally(func() {
+			callsStack.Register("Finally.1.1")
+		})
+
+		promise.Finally(func() {
+			callsStack.Register("Finally.2")
+		})
+
+		var rejectionReason = "elo"
+
+		promise.
+			Then(func(value interface{}) (interface{}, error) {
+				require.Equal(t, resolvedValue, value)
+
+				callsStack.Register("Then.3")
+
+				return nil, errors.New(rejectionReason)
+			}).
+			Catch(func(reason error) {
+				require.EqualError(t, reason, rejectionReason)
+
+				callsStack.Register("Catch.3.1")
+			}).
+			Finally(func() {
+				callsStack.Register("Finally.3.1.1")
+			})
+
+		callsStack.AssertCompletedBefore(t, "NewPromise.1|Finally.2|Then.3|Finally.1.1|Catch.3.1|Finally.3.1.1", time.Millisecond*100)
 	})
 }
 
