@@ -18,7 +18,7 @@ type Promise struct {
 }
 
 func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
-	p := &Promise{
+	p := Promise{
 		state: StateSettling,
 	}
 
@@ -34,7 +34,7 @@ func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
 		p.notifyObservers()
 	}()
 
-	return p
+	return &p
 }
 
 func Pending() *Promise {
@@ -102,7 +102,7 @@ func (p *Promise) registerHandlers(
 	rejectHandler RejectHandler,
 	finallyHandler FinallyHandler,
 ) *Promise {
-	newPromise := &Promise{
+	newPromise := Promise{
 		state: StateSettling,
 	}
 
@@ -192,7 +192,7 @@ func (p *Promise) registerHandlers(
 		p.notifyObservers()
 	}
 
-	return newPromise
+	return &newPromise
 }
 
 func (p *Promise) notifyObservers() {
