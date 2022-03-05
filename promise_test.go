@@ -472,7 +472,9 @@ func TestPromise(t *testing.T) {
 
 		var resolvedValue = fakerInstance.IntBetween(2, 999)
 
-		waitGroup.Initialize("root", 1)
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("level-2", 3)
 
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
 			waitGroup.Wait("root")
@@ -493,6 +495,8 @@ func TestPromise(t *testing.T) {
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue+0, value)
 
+				defer waitGroup.Done("level-2")
+
 				time.Sleep(time.Millisecond * 150)
 
 				callsStack.Register("Then.1.1")
@@ -510,6 +514,8 @@ func TestPromise(t *testing.T) {
 			}).
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue+1, value)
+
+				defer waitGroup.Done("level-2")
 
 				time.Sleep(time.Millisecond * 100)
 
@@ -529,6 +535,8 @@ func TestPromise(t *testing.T) {
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue+2, value)
 
+				defer waitGroup.Done("level-2")
+
 				time.Sleep(time.Millisecond * 50)
 
 				callsStack.Register("Then.3.1")
@@ -537,8 +545,9 @@ func TestPromise(t *testing.T) {
 			})
 
 		waitGroup.Done("root")
+		waitGroup.Wait("level-2")
 
-		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Then.2", "Then.3", "Then.1.1", "Then.2.1", "Then.3.1"}, time.Millisecond*500)
+		callsStack.AssertCompletedInOrder(t, []string{"NewPromise.1", "Then.1", "Then.2", "Then.3", "Then.1.1", "Then.2.1", "Then.3.1"})
 	})
 
 	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value as Promise", func(t *testing.T) {

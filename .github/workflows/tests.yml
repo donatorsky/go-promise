@@ -42,6 +42,42 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Test
-        timeout-minutes: 1
+      - name: Todo
+        run: |
+          echo "foo"
+          echo "$GOPATH/pkg/mod/"
+          echo "foo"
+
+          ls -Al "$GOPATH/pkg/mod/"
+
+      - name: Run tests
+        timeout-minutes: 3
         run: go test ./...
+
+  code-coverage:
+    needs:
+      - test
+
+    runs-on: 'ubuntu-latest'
+    name: 'Code coverage'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.17'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Calculate coverage
+        timeout-minutes: 5
+        run: go test ./... -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Todo
+        run: |
+          ls -Al
+          ls -Al "$GOPATH/pkg/mod/"

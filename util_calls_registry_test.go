@@ -49,7 +49,7 @@ func (r *CallsRegistry) Summarize() string {
 func (r *CallsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
 	sort.Strings(expectedRegistry)
 
-	r.assertCallsStacksAreSame(t, func() ([]string, []string) {
+	r.assertCallsStacksAreSameBefore(t, func() ([]string, []string) {
 		r.mutex.Lock()
 		currentRegistry := make([]string, len(r.registry))
 		copy(currentRegistry, r.registry)
@@ -61,8 +61,15 @@ func (r *CallsRegistry) AssertCompletedBefore(t *testing.T, expectedRegistry []s
 	}, timeLimit)
 }
 
-func (r *CallsRegistry) AssertCompletedInOrderBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
+func (r *CallsRegistry) AssertCompletedInOrder(t *testing.T, expectedRegistry []string) {
 	r.assertCallsStacksAreSame(
+		t,
+		func() ([]string, []string) { return expectedRegistry, r.registry },
+	)
+}
+
+func (r *CallsRegistry) AssertCompletedInOrderBefore(t *testing.T, expectedRegistry []string, timeLimit time.Duration) {
+	r.assertCallsStacksAreSameBefore(
 		t,
 		func() ([]string, []string) { return expectedRegistry, r.registry },
 		timeLimit,
@@ -107,7 +114,13 @@ func (r *CallsRegistry) AssertThereAreNCallsLeft(t *testing.T, numberOfCallsLeft
 	require.Equal(t, numberOfCallsLeft, r.expectedCalls-numberOfCurrentCalls)
 }
 
-func (r *CallsRegistry) assertCallsStacksAreSame(t *testing.T, h func() ([]string, []string), timeLimit time.Duration) {
+func (r *CallsRegistry) assertCallsStacksAreSame(t *testing.T, h func() ([]string, []string)) {
+	expectedRegistry, currentRegistry := h()
+
+	require.Equal(t, expectedRegistry, currentRegistry)
+}
+
+func (r *CallsRegistry) assertCallsStacksAreSameBefore(t *testing.T, h func() ([]string, []string), timeLimit time.Duration) {
 	timeLimiter := time.After(timeLimit)
 
 	for {
