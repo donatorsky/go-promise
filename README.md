@@ -159,21 +159,21 @@ func main() {
 The output:
 ```text
 Constructor: actions after promise resolution
-Then() returning resolved Promise <- constructor: foo
 Finally(1) <- constructor
+Then() returning resolved Promise <- constructor: foo
+Then(1a) <- constructor: foo
+Then(1b) <- constructor: foo
 Then() <- Finally(1) <- constructor: foo
 Catch() <- Then() <- Finally(1) <- constructor: error from Then()
 Finally(2) <- Catch() <- Then() <- Finally(1) <- constructor
-Then() <- Catch() <- constructor: foo
-Then(1a) <- constructor: foo
-Then(1b) <- constructor: foo
 Then() returning pending Promise <- Then() returning resolved Promise <- constructor: Immediately resolved Promise
+Then() <- Catch() <- constructor: foo
 Then() <- Then() <- Catch() <- constructor: 111
+Then() <- Catch() <- Then() returning pending Promise <- Then() returning resolved Promise <- constructor: Inner Promise
 Then() <- Catch() <- Then(1a) <- constructor: 222
 Then() <- Then(1b) <- constructor: 444
 Then() <- Catch() <- Then() <- Then(1b) <- constructor: 555
-Then() <- Catch() <- Then() returning pending Promise <- Then() returning resolved Promise <- constructor: Inner Promise
-&{{{} [0 0 0]} fulfilled [] <nil> <nil> <nil> foo <nil>}
-&{{{} [0 0 0]} fulfilled [] <nil> <nil> <nil> 5 <nil>}
-&{{{} [0 0 0]} rejected [] <nil> <nil> <nil> <nil> 0xc00020c020}
+&{fulfilled [] [] foo <nil>}
+&{fulfilled [] [] 5 <nil>}
+&{rejected [] [] <nil> 0xc000180040}
 ```

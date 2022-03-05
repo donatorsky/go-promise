@@ -1,9 +1,6 @@
 package promise
 
-import (
-	"errors"
-	"sync"
-)
+import "errors"
 
 var (
 	ErrResolveNotPendingPromise = errors.New("cannot resolve promise that is not in pending state")
@@ -11,41 +8,39 @@ var (
 )
 
 type Promise struct {
-	wg          sync.WaitGroup
-	state       State
-	observers   []*Promise
-	onFulfilled FulfillHandler
-	onRejected  RejectHandler
-	onFinalized FinallyHandler
+	state State
+
+	handlers   []func()
+	operations []func()
 
 	value interface{}
 	err   error
 }
 
 func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
-	p := &Promise{
+	p := Promise{
 		state: StateSettling,
 	}
-
-	p.wg.Add(1)
 
 	go func() {
 		callback(p.resolve, p.reject)
 
-		p.wg.Done()
+		if StateSettling == p.state {
+			p.state = StatePending
 
-		p.notifyObservers(p)
+			return
+		}
+
+		p.notifyObservers()
 	}()
 
-	return p
+	return &p
 }
 
 func Pending() *Promise {
 	p := Promise{
 		state: StatePending,
 	}
-
-	p.wg.Add(1)
 
 	return &p
 }
@@ -84,9 +79,7 @@ func (p *Promise) Resolve(value interface{}) error {
 	p.state = StateFulfilled
 	p.value = value
 
-	p.wg.Done()
-
-	p.notifyObservers(p)
+	p.notifyObservers()
 
 	return nil
 }
@@ -99,9 +92,7 @@ func (p *Promise) Reject(reason error) error {
 	p.state = StateRejected
 	p.err = reason
 
-	p.wg.Done()
-
-	p.notifyObservers(p)
+	p.notifyObservers()
 
 	return nil
 }
@@ -111,97 +102,110 @@ func (p *Promise) registerHandlers(
 	rejectHandler RejectHandler,
 	finallyHandler FinallyHandler,
 ) *Promise {
-	newPromise := &Promise{
-		state:       StateSettling,
-		onFulfilled: fulfillHandler,
-		onRejected:  rejectHandler,
-		onFinalized: finallyHandler,
+	newPromise := Promise{
+		state: StateSettling,
 	}
 
-	if StatePending == p.state || StateSettling == p.state {
-		p.addObserver(newPromise)
-	} else {
-		newPromise.receiveNotification(p)
-	}
+	if nil != fulfillHandler {
+		p.handlers = append(p.handlers, func() {
+			if StateRejected == p.state {
+				p.operations = append(p.operations, func() {
+					newPromise.state = StatePending
 
-	return newPromise
-}
+					_ = newPromise.Reject(p.err)
+				})
 
-func (p *Promise) addObserver(promise *Promise) {
-	p.observers = append(p.observers, promise)
-}
+				return
+			}
 
-func (p *Promise) receiveNotification(promise *Promise) {
-	promise.wg.Wait()
+			if result, err := fulfillHandler(p.value); err == nil {
+				if promiseResult, ok := result.(*Promise); ok {
+					p.operations = append(p.operations, func() {
+						newPromise.state = StatePending
 
-	switch promise.state {
-	case StateFulfilled:
-		p.wg.Add(1)
+						promiseResult.Then(func(value interface{}) (interface{}, error) {
+							_ = newPromise.Resolve(value)
 
-		go func() {
-			if nil == p.onFulfilled {
-				p.resolve(promise.value)
-			} else {
-				if result, err := p.onFulfilled(promise.value); nil == err {
-					p.resolve(result)
+							return value, nil
+						})
 
-					if promiseResult, ok := result.(*Promise); ok {
-						if nil != p.onFinalized {
-							p.onFinalized()
-						}
-
-						p.wg.Done()
-
-						p.notifyObservers(promiseResult)
-
-						return
-					}
+						promiseResult.Catch(func(reason error) {
+							_ = newPromise.Reject(reason)
+						})
+					})
 				} else {
-					p.reject(err)
+					p.operations = append(p.operations, func() {
+						newPromise.state = StatePending
+
+						_ = newPromise.Resolve(result)
+					})
 				}
-			}
-
-			if nil != p.onFinalized {
-				p.onFinalized()
-			}
-
-			p.wg.Done()
-
-			p.notifyObservers(p)
-		}()
-
-	case StateRejected:
-		p.wg.Add(1)
-
-		go func() {
-			if nil == p.onRejected {
-				defer p.notifyObservers(p)
 			} else {
-				p.onRejected(promise.err)
+				p.operations = append(p.operations, func() {
+					newPromise.state = StatePending
 
-				defer p.notifyObservers(Resolve(nil))
+					_ = newPromise.Reject(err)
+				})
 			}
-
-			p.reject(promise.err)
-
-			if nil != p.onFinalized {
-				p.onFinalized()
-			}
-
-			p.wg.Done()
-		}()
-
-	default:
-		panic("unexpected promise state: " + promise.state)
+		})
 	}
+
+	if nil != rejectHandler {
+		p.handlers = append(p.handlers, func() {
+			if StateFulfilled == p.state {
+				p.operations = append(p.operations, func() {
+					newPromise.state = StatePending
+
+					_ = newPromise.Resolve(p.value)
+				})
+
+				return
+			}
+
+			rejectHandler(p.err)
+
+			p.operations = append(p.operations, func() {
+				newPromise.state = StatePending
+
+				_ = newPromise.Resolve(nil)
+			})
+		})
+	}
+
+	if nil != finallyHandler {
+		p.handlers = append(p.handlers, func() {
+			finallyHandler()
+
+			p.operations = append(p.operations, func() {
+				newPromise.state = StatePending
+
+				if StateFulfilled == p.state {
+					_ = newPromise.Resolve(p.value)
+				} else {
+					_ = newPromise.Reject(p.err)
+				}
+			})
+		})
+	}
+
+	if StatePending != p.state && StateSettling != p.state {
+		p.notifyObservers()
+	}
+
+	return &newPromise
 }
 
-func (p *Promise) notifyObservers(promise *Promise) {
-	for _, observer := range p.observers {
-		observer.receiveNotification(promise)
+func (p *Promise) notifyObservers() {
+	for _, handler := range p.handlers {
+		handler()
 	}
 
-	p.observers = nil
+	for _, operation := range p.operations {
+		operation()
+	}
+
+	p.handlers = nil
+	p.operations = nil
 }
 
 func (p *Promise) resolve(value interface{}) {
