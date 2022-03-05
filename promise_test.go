@@ -391,8 +391,9 @@ func TestNewPromise(t *testing.T) {
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
 
 		waitGroup.Done("root")
+		time.Sleep(time.Millisecond * 50)
 
-		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*100)
+		callsStack.AssertCompletedInOrder(t, []string{"NewPromise"})
 		require.True(t, assertPromise(t, promise, StateRejected, nil, rejectionReason))
 	})
 
@@ -848,7 +849,7 @@ func TestPromise(t *testing.T) {
 
 			waitGroup.Done("root")
 
-			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Then.2", "Finally.3"}, time.Millisecond*100)
+			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Then.2", "Finally.3"}, time.Second)
 		})
 
 		t.Run("Already rejected Promise", func(t *testing.T) {
@@ -857,7 +858,9 @@ func TestPromise(t *testing.T) {
 
 			var resolvedValue = fakerInstance.Int()
 
-			waitGroup.Initialize("root", 1)
+			waitGroup.
+				Initialize("root", 1).
+				Initialize("finally.3", 1)
 
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
 				waitGroup.Wait("root")
@@ -887,6 +890,8 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Catch.2")
 				}).
 				Finally(func() {
+					defer waitGroup.Done("finally.3")
+
 					callsStack.Register("Finally.3")
 				})
 
@@ -895,8 +900,9 @@ func TestPromise(t *testing.T) {
 			})
 
 			waitGroup.Done("root")
+			waitGroup.Wait("finally.3")
 
-			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Catch.2", "Finally.3"}, time.Millisecond*100)
+			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Catch.2", "Finally.3"}, time.Second)
 		})
 
 		t.Run("Settling Promise", func(t *testing.T) {
