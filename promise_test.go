@@ -314,48 +314,73 @@ func TestNewPromise(t *testing.T) {
 	fakerInstance := faker.New()
 
 	t.Run("Not resolved and not rejected Promise becomes pending", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(1)
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("NewPromise", 1)
+
 		promise := NewPromise(func(_ Resolver, _ Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise")
+
+			waitGroup.Done("NewPromise")
 		})
 
 		callsStack.AssertCurrentCallsStackIsEmpty(t)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
 
+		waitGroup.Done("root")
+		waitGroup.Wait("NewPromise")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*100)
+		time.Sleep(time.Millisecond * 50)
 		require.True(t, assertPromise(t, promise, StatePending, nil, nil))
 	})
 
 	t.Run("Resolved and not rejected Promise is completed", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(1)
 
 		var resolutionValue = fakerInstance.Int()
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("NewPromise", 1)
+
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			resolve(resolutionValue)
 
 			callsStack.Register("NewPromise")
+
+			waitGroup.Done("NewPromise")
 		})
 
 		callsStack.AssertCurrentCallsStackIsEmpty(t)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
 
+		waitGroup.Done("root")
+		waitGroup.Wait("NewPromise")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*200)
+		time.Sleep(time.Millisecond * 50)
 		require.True(t, assertPromise(t, promise, StateFulfilled, resolutionValue, nil))
 	})
 
 	t.Run("Not resolved and rejected Promise is completed", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(1)
 
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
 
+		waitGroup.Initialize("root", 1)
+
 		promise := NewPromise(func(_ Resolver, reject Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise")
 
@@ -364,52 +389,76 @@ func TestNewPromise(t *testing.T) {
 
 		callsStack.AssertCurrentCallsStackIsEmpty(t)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
+
+		waitGroup.Done("root")
 
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*100)
 		require.True(t, assertPromise(t, promise, StateRejected, nil, rejectionReason))
 	})
 
 	t.Run("Resolved and rejected Promise is only resolved", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(1)
 
 		var resolvedValue = fakerInstance.Int()
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("NewPromise", 1)
+
 		promise := NewPromise(func(resolve Resolver, reject Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise")
 
 			resolve(resolvedValue)
 			reject(rejectionReason)
+
+			waitGroup.Done("NewPromise")
 		})
 
 		callsStack.AssertCurrentCallsStackIsEmpty(t)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
 
+		waitGroup.Done("root")
+		waitGroup.Wait("NewPromise")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*100)
+		time.Sleep(time.Millisecond * 50)
 		require.True(t, assertPromise(t, promise, StateFulfilled, resolvedValue, nil))
 	})
 
 	t.Run("Rejected and resolved Promise is only rejected", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(1)
 
 		var resolvedValue = fakerInstance.Int()
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("NewPromise", 1)
+
 		promise := NewPromise(func(resolve Resolver, reject Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise")
 
 			reject(rejectionReason)
 			resolve(resolvedValue)
+
+			waitGroup.Done("NewPromise")
 		})
 
 		callsStack.AssertCurrentCallsStackIsEmpty(t)
 		require.True(t, assertPromise(t, promise, StateSettling, nil, nil))
 
+		waitGroup.Done("root")
+		waitGroup.Wait("NewPromise")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise"}, time.Millisecond*100)
+		time.Sleep(time.Millisecond * 50)
 		require.True(t, assertPromise(t, promise, StateRejected, nil, rejectionReason))
 	})
 }
@@ -418,12 +467,15 @@ func TestPromise(t *testing.T) {
 	fakerInstance := faker.New()
 
 	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(7)
 
 		var resolvedValue = fakerInstance.IntBetween(2, 999)
 
+		waitGroup.Initialize("root", 1)
+
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise.1")
 
@@ -433,8 +485,6 @@ func TestPromise(t *testing.T) {
 		promise.
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue, value)
-
-				time.Sleep(time.Millisecond * 1)
 
 				callsStack.Register("Then.1")
 
@@ -454,8 +504,6 @@ func TestPromise(t *testing.T) {
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue, value)
 
-				time.Sleep(time.Millisecond * 2)
-
 				callsStack.Register("Then.2")
 
 				return resolvedValue + 1, nil
@@ -474,8 +522,6 @@ func TestPromise(t *testing.T) {
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue, value)
 
-				time.Sleep(time.Millisecond * 3)
-
 				callsStack.Register("Then.3")
 
 				return resolvedValue + 2, nil
@@ -490,16 +536,25 @@ func TestPromise(t *testing.T) {
 				return nil, nil
 			})
 
+		waitGroup.Done("root")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Then.2", "Then.3", "Then.1.1", "Then.2.1", "Then.3.1"}, time.Millisecond*500)
 	})
 
 	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value as Promise", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(7)
 
 		var resolvedValue = fakerInstance.IntBetween(2, 999)
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("defer-then.1.1", 1).
+			Initialize("defer-then.2.1", 1).
+			Initialize("defer-then.3.1", 1)
+
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise.1")
 
@@ -513,7 +568,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Then.1")
 
 				return NewPromise(func(resolve Resolver, _ Rejector) {
-					time.Sleep(time.Millisecond * 150)
+					waitGroup.Wait("defer-then.1.1")
 
 					resolve(resolvedValue + 0)
 				}), nil
@@ -533,7 +588,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Then.2")
 
 				return NewPromise(func(resolve Resolver, _ Rejector) {
-					time.Sleep(time.Millisecond * 100)
+					waitGroup.Wait("defer-then.2.1")
 
 					resolve(resolvedValue + 1)
 				}), nil
@@ -553,7 +608,7 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Then.3")
 
 				return NewPromise(func(resolve Resolver, _ Rejector) {
-					time.Sleep(time.Millisecond * 50)
+					waitGroup.Wait("defer-then.3.1")
 
 					resolve(resolvedValue + 2)
 				}), nil
@@ -566,16 +621,28 @@ func TestPromise(t *testing.T) {
 				return nil, nil
 			})
 
+		waitGroup.Done("root")
+		waitGroup.Done("defer-then.3.1")
+		time.Sleep(time.Millisecond * 50)
+		waitGroup.Done("defer-then.2.1")
+		time.Sleep(time.Millisecond * 50)
+		waitGroup.Done("defer-then.1.1")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Then.2", "Then.3", "Then.3.1", "Then.2.1", "Then.1.1"}, time.Millisecond*500)
 	})
 
 	t.Run("Multiple Catch callbacks receive the same rejection error, do not pass it further", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(4)
 
 		var rejectionReason = fakerInstance.Lorem().Sentence(6)
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("catch", 3)
+
 		promise := NewPromise(func(_ Resolver, reject Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise.1")
 
@@ -586,7 +653,7 @@ func TestPromise(t *testing.T) {
 			Catch(func(reason error) {
 				require.EqualError(t, reason, rejectionReason)
 
-				time.Sleep(time.Millisecond * 1)
+				defer waitGroup.Done("catch")
 
 				callsStack.Register("Catch.1")
 			}).
@@ -598,7 +665,7 @@ func TestPromise(t *testing.T) {
 			Catch(func(reason error) {
 				require.EqualError(t, reason, rejectionReason)
 
-				time.Sleep(time.Millisecond * 2)
+				defer waitGroup.Done("catch")
 
 				callsStack.Register("Catch.2")
 			}).
@@ -610,7 +677,7 @@ func TestPromise(t *testing.T) {
 			Catch(func(reason error) {
 				require.EqualError(t, reason, rejectionReason)
 
-				time.Sleep(time.Millisecond * 3)
+				defer waitGroup.Done("catch")
 
 				callsStack.Register("Catch.3")
 			}).
@@ -618,15 +685,26 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Catch.3.1")
 			})
 
+		waitGroup.Done("root")
+		waitGroup.Wait("catch")
+
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Catch.1", "Catch.2", "Catch.3"}, time.Millisecond*100)
 	})
 
 	t.Run("Finally is called after Then", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(4)
 
 		var resolvedValue = fakerInstance.Int()
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("level-1", 2).
+			Initialize("level-2", 1)
+
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
+			waitGroup.Wait("root")
+
 			callsStack.Register("NewPromise.1")
 
 			resolve(resolvedValue)
@@ -640,29 +718,44 @@ func TestPromise(t *testing.T) {
 			Then(func(value interface{}) (interface{}, error) {
 				require.Equal(t, resolvedValue, value)
 
-				callsStack.Register("Then.1")
+				defer waitGroup.Done("level-1")
 
-				time.Sleep(time.Millisecond * 10)
+				callsStack.Register("Then.1")
 
 				return nil, nil
 			}).
 			Finally(func() {
+				defer waitGroup.Done("level-2")
+
 				callsStack.Register("Finally.2")
 			})
 
 		promise.Finally(func() {
+			defer waitGroup.Done("level-1")
+
 			callsStack.Register("Finally.1")
 		})
+
+		waitGroup.Done("root")
+		waitGroup.Wait("level-1")
+		waitGroup.Wait("level-2")
 
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Finally.2"}, time.Millisecond*100)
 	})
 
 	t.Run("Finally is called after Catch", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(4)
 
 		var rejectionReason = fakerInstance.Lorem().Sentence(6)
 
+		waitGroup.
+			Initialize("root", 1).
+			Initialize("level-1", 2)
+
 		promise := NewPromise(func(_ Resolver, reject Rejector) {
+			waitGroup.Wait("root")
+
 			callsStack.Register("NewPromise.1")
 
 			reject(errors.New(rejectionReason))
@@ -678,6 +771,8 @@ func TestPromise(t *testing.T) {
 			Catch(func(reason error) {
 				require.EqualError(t, reason, rejectionReason)
 
+				defer waitGroup.Done("level-1")
+
 				callsStack.Register("Catch.1")
 			}).
 			Finally(func() {
@@ -685,20 +780,28 @@ func TestPromise(t *testing.T) {
 			})
 
 		promise.Finally(func() {
+			defer waitGroup.Done("level-1")
+
 			callsStack.Register("Finally.1")
 		})
+
+		waitGroup.Done("root")
+		waitGroup.Wait("level-1")
 
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Catch.1", "Finally.1", "Finally.2"}, time.Millisecond*100)
 	})
 
 	t.Run("Then can return another Promise", func(t *testing.T) {
 		t.Run("Already resolved Promise", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.Initialize("root", 1)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -734,16 +837,21 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
+			waitGroup.Done("root")
+
 			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Then.2", "Finally.3"}, time.Millisecond*100)
 		})
 
 		t.Run("Already rejected Promise", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.Initialize("root", 1)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -777,16 +885,21 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
+			waitGroup.Done("root")
+
 			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.1", "Finally.1", "Catch.2", "Finally.3"}, time.Millisecond*100)
 		})
 
 		t.Run("Settling Promise", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(6)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.Initialize("root", 1)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -806,8 +919,6 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Then.1")
 
 					return NewPromise(func(resolve Resolver, _ Rejector) {
-						time.Sleep(time.Millisecond * 50)
-
 						callsStack.Register("NewPromise.1.1")
 
 						resolve(resolvedThenValue)
@@ -828,6 +939,8 @@ func TestPromise(t *testing.T) {
 				callsStack.Register("Finally.1")
 			})
 
+			waitGroup.Done("root")
+
 			callsStack.AssertCompletedInOrderBefore(
 				t,
 				[]string{"NewPromise.1", "Then.1", "Finally.1", "NewPromise.1.1", "Then.2", "Finally.3"},
@@ -836,12 +949,17 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Resolve pending Promise", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.
+				Initialize("root", 1).
+				Initialize("level-1", 2)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -858,6 +976,8 @@ func TestPromise(t *testing.T) {
 			promise.
 				Then(func(value interface{}) (interface{}, error) {
 					require.Equal(t, resolvedValue, value)
+
+					defer waitGroup.Done("level-1")
 
 					callsStack.Register("Then.1")
 
@@ -875,11 +995,14 @@ func TestPromise(t *testing.T) {
 				})
 
 			promise.Finally(func() {
+				defer waitGroup.Done("level-1")
+
 				callsStack.Register("Finally.1")
 			})
 
-			// Wait for NewPromise to be resolved and Then to be called
-			time.Sleep(time.Millisecond * 100)
+			// Resume NewPromise, let it be resolved and call Then
+			waitGroup.Done("root")
+			waitGroup.Wait("level-1")
 
 			callsStack.AssertCurrentCallsStackIs(t, []string{"NewPromise.1", "Then.1", "Finally.1"})
 			callsStack.AssertThereAreNCallsLeft(t, 2)
@@ -896,12 +1019,17 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Reject pending Promise", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.
+				Initialize("root", 1).
+				Initialize("level-1", 2)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -919,6 +1047,8 @@ func TestPromise(t *testing.T) {
 				Then(func(value interface{}) (interface{}, error) {
 					require.Equal(t, resolvedValue, value)
 
+					defer waitGroup.Done("level-1")
+
 					callsStack.Register("Then.1")
 
 					return pendingPromise, nil
@@ -933,11 +1063,14 @@ func TestPromise(t *testing.T) {
 				})
 
 			promise.Finally(func() {
+				defer waitGroup.Done("level-1")
+
 				callsStack.Register("Finally.1")
 			})
 
-			// Wait for NewPromise to be resolved and Then to be called
-			time.Sleep(time.Millisecond * 100)
+			// Resume NewPromise, let it be resolved and call Then
+			waitGroup.Done("root")
+			waitGroup.Wait("level-1")
 
 			callsStack.AssertCurrentCallsStackIs(t, []string{"NewPromise.1", "Then.1", "Finally.1"})
 			callsStack.AssertThereAreNCallsLeft(t, 2)
@@ -956,12 +1089,15 @@ func TestPromise(t *testing.T) {
 
 	t.Run("Then after Catch", func(t *testing.T) {
 		t.Run("Then receives resolved value when Catch was not called", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(3)
 
 			var resolvedValue = fakerInstance.Int()
 
+			waitGroup.Initialize("root", 1)
+
 			promise := NewPromise(func(resolve Resolver, _ Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -983,16 +1119,21 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Finally.3")
 				})
 
+			waitGroup.Done("root")
+
 			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Then.2", "Finally.3"}, time.Millisecond*100)
 		})
 
 		t.Run("Then receives nil value when Catch was called", func(t *testing.T) {
+			waitGroup := NewWaitGroup()
 			callsStack := NewCallsRegistry(4)
 
 			var rejectionValue = fakerInstance.Lorem().Sentence(6)
 
+			waitGroup.Initialize("root", 1)
+
 			promise := NewPromise(func(_ Resolver, reject Rejector) {
-				time.Sleep(time.Millisecond * 50)
+				waitGroup.Wait("root")
 
 				callsStack.Register("NewPromise.1")
 
@@ -1016,17 +1157,22 @@ func TestPromise(t *testing.T) {
 					callsStack.Register("Finally.3")
 				})
 
+			waitGroup.Done("root")
+
 			callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Catch.1", "Then.2", "Finally.3"}, time.Millisecond*100)
 		})
 	})
 
 	t.Run("Then returns error and Catch receives it", func(t *testing.T) {
+		waitGroup := NewWaitGroup()
 		callsStack := NewCallsRegistry(6)
 
 		var resolvedValue = fakerInstance.Int()
 
+		waitGroup.Initialize("root", 1)
+
 		promise := NewPromise(func(resolve Resolver, _ Rejector) {
-			time.Sleep(time.Millisecond * 50)
+			waitGroup.Wait("root")
 
 			callsStack.Register("NewPromise.1")
 
@@ -1061,6 +1207,8 @@ func TestPromise(t *testing.T) {
 			Finally(func() {
 				callsStack.Register("Finally.3.1.1")
 			})
+
+		waitGroup.Done("root")
 
 		callsStack.AssertCompletedInOrderBefore(t, []string{"NewPromise.1", "Finally.2", "Then.3", "Finally.1.1", "Catch.3.1", "Finally.3.1.1"}, time.Millisecond*100)
 	})
