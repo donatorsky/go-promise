@@ -1,6 +1,9 @@
 package promise
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 var (
 	ErrResolveNotPendingPromise = errors.New("cannot resolve promise that is not in pending state")
@@ -8,6 +11,7 @@ var (
 )
 
 type Promise struct {
+	mutex sync.RWMutex
 	state State
 
 	handlers   []func()
@@ -25,11 +29,17 @@ func NewPromise(callback func(resolve Resolver, reject Rejector)) *Promise {
 	go func() {
 		callback(p.resolve, p.reject)
 
+		p.mutex.RLock()
+
 		if StateSettling == p.state {
 			p.state = StatePending
 
+			p.mutex.RUnlock()
+
 			return
 		}
+
+		p.mutex.RUnlock()
 
 		p.notifyObservers()
 	}()
@@ -72,12 +82,18 @@ func (p *Promise) Finally(handler FinallyHandler) Promiser {
 }
 
 func (p *Promise) Resolve(value interface{}) error {
+	p.mutex.Lock()
+
 	if StatePending != p.state {
+		p.mutex.Unlock()
+
 		return ErrResolveNotPendingPromise
 	}
 
 	p.state = StateFulfilled
 	p.value = value
+
+	p.mutex.Unlock()
 
 	p.notifyObservers()
 
@@ -85,12 +101,18 @@ func (p *Promise) Resolve(value interface{}) error {
 }
 
 func (p *Promise) Reject(reason error) error {
+	p.mutex.Lock()
+
 	if StatePending != p.state {
+		p.mutex.Unlock()
+
 		return ErrRejectNotPendingPromise
 	}
 
 	p.state = StateRejected
 	p.err = reason
+
+	p.mutex.Unlock()
 
 	p.notifyObservers()
 
@@ -107,7 +129,7 @@ func (p *Promise) registerHandlers(
 	}
 
 	if nil != fulfillHandler {
-		p.handlers = append(p.handlers, func() {
+		handler := func() {
 			if StateRejected == p.state {
 				p.operations = append(p.operations, func() {
 					newPromise.state = StatePending
@@ -147,11 +169,15 @@ func (p *Promise) registerHandlers(
 					_ = newPromise.Reject(err)
 				})
 			}
-		})
+		}
+
+		p.mutex.Lock()
+		p.handlers = append(p.handlers, handler)
+		p.mutex.Unlock()
 	}
 
 	if nil != rejectHandler {
-		p.handlers = append(p.handlers, func() {
+		handler := func() {
 			if StateFulfilled == p.state {
 				p.operations = append(p.operations, func() {
 					newPromise.state = StatePending
@@ -169,11 +195,15 @@ func (p *Promise) registerHandlers(
 
 				_ = newPromise.Resolve(nil)
 			})
-		})
+		}
+
+		p.mutex.Lock()
+		p.handlers = append(p.handlers, handler)
+		p.mutex.Unlock()
 	}
 
 	if nil != finallyHandler {
-		p.handlers = append(p.handlers, func() {
+		handler := func() {
 			finallyHandler()
 
 			p.operations = append(p.operations, func() {
@@ -185,10 +215,18 @@ func (p *Promise) registerHandlers(
 					_ = newPromise.Reject(p.err)
 				}
 			})
-		})
+		}
+
+		p.mutex.Lock()
+		p.handlers = append(p.handlers, handler)
+		p.mutex.Unlock()
 	}
 
-	if StatePending != p.state && StateSettling != p.state {
+	p.mutex.RLock()
+	shouldCallHandlersImmediately := StatePending != p.state && StateSettling != p.state
+	p.mutex.RUnlock()
+
+	if shouldCallHandlersImmediately {
 		p.notifyObservers()
 	}
 
@@ -196,6 +234,9 @@ func (p *Promise) registerHandlers(
 }
 
 func (p *Promise) notifyObservers() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	for _, handler := range p.handlers {
 		handler()
 	}
@@ -209,6 +250,9 @@ func (p *Promise) notifyObservers() {
 }
 
 func (p *Promise) resolve(value interface{}) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	if StateSettling != p.state {
 		return
 	}
@@ -218,6 +262,9 @@ func (p *Promise) resolve(value interface{}) {
 }
 
 func (p *Promise) reject(reason error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	if StateSettling != p.state {
 		return
 	}

@@ -124,7 +124,9 @@ func (r *CallsRegistry) assertCallsStacksAreSameBefore(t *testing.T, h func() ([
 	timeLimiter := time.After(timeLimit)
 
 	for {
+		r.mutex.RLock()
 		expectedRegistry, currentRegistry := h()
+		r.mutex.RUnlock()
 
 		select {
 		case <-timeLimiter:
