@@ -71,7 +71,7 @@ func TestPromise_Resolve(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Successfully manually Resolve promise in state: %s", StatePending), func(t *testing.T) {
-		callsStack := NewCallsRegistry(1)
+		callsStack := newCallsRegistry(1)
 
 		var resolutionValue = fakerInstance.Int()
 
@@ -113,7 +113,7 @@ func TestPromise_Reject(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Successfully manually Reject promise in state: %s", StatePending), func(t *testing.T) {
-		callsStack := NewCallsRegistry(1)
+		callsStack := newCallsRegistry(1)
 
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
 
@@ -142,7 +142,7 @@ func TestPromise_Then(t *testing.T) {
 		{state: StateSettling},
 	} {
 		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
-			callsStack := NewCallsRegistry(0)
+			callsStack := newCallsRegistry(0)
 
 			promise := Promise{
 				state: tt.state,
@@ -161,7 +161,7 @@ func TestPromise_Then(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Then immidiately for Promise in state: %s", StateFulfilled), func(t *testing.T) {
-		callsStack := NewCallsRegistry(1)
+		callsStack := newCallsRegistry(1)
 
 		promise := Promise{
 			state: StateFulfilled,
@@ -182,7 +182,7 @@ func TestPromise_Then(t *testing.T) {
 	})
 
 	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and skips Then for Promise in state: %s", StateRejected), func(t *testing.T) {
-		callsStack := NewCallsRegistry(0)
+		callsStack := newCallsRegistry(0)
 
 		promise := Promise{
 			state: StateRejected,
@@ -210,7 +210,7 @@ func TestPromise_Catch(t *testing.T) {
 		{state: StateSettling},
 	} {
 		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
-			callsStack := NewCallsRegistry(0)
+			callsStack := newCallsRegistry(0)
 
 			promise := Promise{
 				state: tt.state,
@@ -227,7 +227,7 @@ func TestPromise_Catch(t *testing.T) {
 	}
 
 	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and skips Catch for Promise in state: %s", StateFulfilled), func(t *testing.T) {
-		callsStack := NewCallsRegistry(0)
+		callsStack := newCallsRegistry(0)
 
 		promise := Promise{
 			state: StateFulfilled,
@@ -243,7 +243,7 @@ func TestPromise_Catch(t *testing.T) {
 	})
 
 	t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Catch immidiately for Promise in state: %s", StateRejected), func(t *testing.T) {
-		callsStack := NewCallsRegistry(1)
+		callsStack := newCallsRegistry(1)
 
 		promise := Promise{
 			state: StateRejected,
@@ -270,7 +270,7 @@ func TestPromise_Finally(t *testing.T) {
 		{state: StateSettling},
 	} {
 		t.Run(fmt.Sprintf("Returns new Promise and registers handler for Promise in state: %s", tt.state), func(t *testing.T) {
-			callsStack := NewCallsRegistry(0)
+			callsStack := newCallsRegistry(0)
 
 			promise := Promise{
 				state: tt.state,
@@ -293,7 +293,7 @@ func TestPromise_Finally(t *testing.T) {
 		{state: StateRejected},
 	} {
 		t.Run(fmt.Sprintf("Returns new Promise, does not register handler and executes Finally immidiately for Promise in state: %s", tt.state), func(t *testing.T) {
-			callsStack := NewCallsRegistry(1)
+			callsStack := newCallsRegistry(1)
 
 			promise := Promise{
 				state: tt.state,
@@ -314,8 +314,8 @@ func TestNewPromise(t *testing.T) {
 	fakerInstance := faker.New()
 
 	t.Run("Not resolved and not rejected Promise becomes pending", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(1)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(1)
 
 		waitGroup.
 			Initialize("root", 1).
@@ -341,8 +341,8 @@ func TestNewPromise(t *testing.T) {
 	})
 
 	t.Run("Resolved and not rejected Promise is completed", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(1)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(1)
 
 		var resolutionValue = fakerInstance.Int()
 
@@ -372,8 +372,8 @@ func TestNewPromise(t *testing.T) {
 	})
 
 	t.Run("Not resolved and rejected Promise is completed", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(1)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(1)
 
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
 
@@ -398,8 +398,8 @@ func TestNewPromise(t *testing.T) {
 	})
 
 	t.Run("Resolved and rejected Promise is only resolved", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(1)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(1)
 
 		var resolvedValue = fakerInstance.Int()
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
@@ -431,8 +431,8 @@ func TestNewPromise(t *testing.T) {
 	})
 
 	t.Run("Rejected and resolved Promise is only rejected", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(1)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(1)
 
 		var resolvedValue = fakerInstance.Int()
 		var rejectionReason = errors.New(fakerInstance.Lorem().Sentence(6))
@@ -468,8 +468,8 @@ func TestPromise(t *testing.T) {
 	fakerInstance := faker.New()
 
 	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(7)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(7)
 
 		var resolvedValue = fakerInstance.IntBetween(2, 999)
 
@@ -552,8 +552,8 @@ func TestPromise(t *testing.T) {
 	})
 
 	t.Run("Multiple Then callbacks receive the same resolution value, pass modified value as Promise", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(7)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(7)
 
 		var resolvedValue = fakerInstance.IntBetween(2, 999)
 
@@ -642,8 +642,8 @@ func TestPromise(t *testing.T) {
 	})
 
 	t.Run("Multiple Catch callbacks receive the same rejection error, do not pass it further", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(4)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(4)
 
 		var rejectionReason = fakerInstance.Lorem().Sentence(6)
 
@@ -702,8 +702,8 @@ func TestPromise(t *testing.T) {
 	})
 
 	t.Run("Finally is called after Then", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(4)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(4)
 
 		var resolvedValue = fakerInstance.Int()
 
@@ -754,8 +754,8 @@ func TestPromise(t *testing.T) {
 	})
 
 	t.Run("Finally is called after Catch", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(4)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(4)
 
 		var rejectionReason = fakerInstance.Lorem().Sentence(6)
 
@@ -803,8 +803,8 @@ func TestPromise(t *testing.T) {
 
 	t.Run("Then can return another Promise", func(t *testing.T) {
 		t.Run("Already resolved Promise", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(5)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -853,8 +853,8 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Already rejected Promise", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(5)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -906,8 +906,8 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Settling Promise", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(6)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(6)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -964,8 +964,8 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Resolve pending Promise", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(5)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -1034,8 +1034,8 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Reject pending Promise", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(5)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(5)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -1104,8 +1104,8 @@ func TestPromise(t *testing.T) {
 
 	t.Run("Then after Catch", func(t *testing.T) {
 		t.Run("Then receives resolved value when Catch was not called", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(3)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(3)
 
 			var resolvedValue = fakerInstance.Int()
 
@@ -1140,8 +1140,8 @@ func TestPromise(t *testing.T) {
 		})
 
 		t.Run("Then receives nil value when Catch was called", func(t *testing.T) {
-			waitGroup := NewWaitGroup()
-			callsStack := NewCallsRegistry(4)
+			waitGroup := newWaitGroup()
+			callsStack := newCallsRegistry(4)
 
 			var rejectionValue = fakerInstance.Lorem().Sentence(6)
 
@@ -1179,8 +1179,8 @@ func TestPromise(t *testing.T) {
 	})
 
 	t.Run("Then returns error and Catch receives it", func(t *testing.T) {
-		waitGroup := NewWaitGroup()
-		callsStack := NewCallsRegistry(6)
+		waitGroup := newWaitGroup()
+		callsStack := newCallsRegistry(6)
 
 		var resolvedValue = fakerInstance.Int()
 
