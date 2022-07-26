@@ -4,4 +4,4 @@ go 1.13
 
 require github.com/stretchr/testify v1.8.0
 
-require github.com/jaswdr/faker v1.12.0
+require github.com/jaswdr/faker v1.13.0
