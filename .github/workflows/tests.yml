@@ -63,14 +63,16 @@ jobs:
           go-version: '1.17'
 
       - name: Install dependencies
-        run:  go mod download
+        run: go mod download
 
       - name: Calculate coverage
         timeout-minutes: 5
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
-      - uses: codecov/codecov-action@v3
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
           flags: unittests
           fail_ci_if_error: true
